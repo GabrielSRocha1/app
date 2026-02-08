@@ -1,6 +1,5 @@
-
 import { GoogleGenAI, Type, Modality } from "@google/genai";
-import { TransactionType, Category, PaymentMethod, RecurrenceType } from "./types";
+import { TransactionType, Category, PaymentMethod, RecurrenceType } from "./types.ts";
 
 export interface AISuggestion {
   description: string;

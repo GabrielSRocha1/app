@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Home, List, CreditCard, Plus, MessageCircle, CloudSync, Zap, ChevronDown, LogOut } from 'lucide-react';
-import { Transaction, AppState, TransactionType, RecurrenceType, Category, RecurringTemplate, UserProfile } from './types';
-import Dashboard from './components/Dashboard';
-import TransactionList from './components/TransactionList';
-import AddModal from './components/AddModal';
-import Wallet from './components/Wallet';
-import MonthlyReport from './components/MonthlyReport';
-import Flows from './components/Flows';
-import Login from './components/Login';
-import { supabase } from './lib/supabase';
+import { Home, List, CreditCard, Plus, MessageCircle, RefreshCcw, Zap, ChevronDown, LogOut } from 'lucide-react';
+import { Transaction, AppState, TransactionType, RecurrenceType, Category, RecurringTemplate, UserProfile } from './types.ts';
+import Dashboard from './components/Dashboard.tsx';
+import TransactionList from './components/TransactionList.tsx';
+import AddModal from './components/AddModal.tsx';
+import Wallet from './components/Wallet.tsx';
+import MonthlyReport from './components/MonthlyReport.tsx';
+import Flows from './components/Flows.tsx';
+import Login from './components/Login.tsx';
+import { supabase } from './lib/supabase.ts';
 
 const INITIAL_RECURRING: Category[] = [
   'Aluguel', 'Água', 'Luz', 'Academia', 'Internet', 
@@ -49,7 +49,7 @@ const App: React.FC = () => {
     if (isAuthenticated && appState.user.email) {
       loadUserData(appState.user.email);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, appState.user.email]);
 
   const loadUserData = async (email: string) => {
     updateState({ isSyncing: true });
@@ -62,7 +62,6 @@ const App: React.FC = () => {
 
       if (error) throw error;
       if (data) {
-        // Normaliza campos vindos do banco para o estado do App
         const mappedData = data.map((d: any) => ({
           ...d,
           paymentMethod: d.payment_method || d.paymentMethod,
@@ -110,7 +109,6 @@ const App: React.FC = () => {
   const handleAddTransaction = async (newT: Omit<Transaction, 'id' | 'userId' | 'familyId'>) => {
     updateState({ isSyncing: true });
     
-    // Mapeia para snake_case exigido pela estrutura padrão do Supabase
     const transactionData = {
       description: newT.description,
       amount: newT.amount,
@@ -217,7 +215,7 @@ const App: React.FC = () => {
               </div>
               <div className="flex items-center gap-4">
                  <div className={`transition-all duration-500 ${appState.isSyncing ? 'opacity-100' : 'opacity-0'}`}>
-                    <CloudSync className="w-5 h-5 text-blue-500 animate-spin" />
+                    <RefreshCcw className="w-5 h-5 text-blue-500 animate-spin" />
                  </div>
                  <button className="w-10 h-10 bg-[#111] rounded-[5px] flex items-center justify-center border border-white/5 active:scale-95 transition-all">
                     <MessageCircle size={18} className="text-gray-400" />
