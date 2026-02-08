@@ -111,7 +111,19 @@ const AddModal: React.FC<AddModalProps> = ({ isOpen, onClose, onAdd }) => {
     } catch (e) { alert("Microfone necessário."); }
   };
 
-  const stopVoice = () => mediaRecorderRef.current?.stop();
+  const stopVoice = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const handleVoiceToggle = () => {
+    if (aiStatus === 'LISTENING') {
+      stopVoice();
+    } else {
+      startVoice();
+    }
+  };
 
   const filteredCategories = (type === TransactionType.INCOME ? INCOME_CATEGORIES : EXPENSE_CATEGORIES)
     .filter(cat => cat.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -161,7 +173,9 @@ const AddModal: React.FC<AddModalProps> = ({ isOpen, onClose, onAdd }) => {
             <h2 className="text-sm font-black uppercase tracking-widest text-white">{step === 'CATEGORY_SELECT' ? 'Categorias' : (type === TransactionType.INCOME ? 'Receber com' : 'Pagar com')}</h2>
         )}
         <div className="flex gap-2">
-            <button onClick={startVoice} className={`p-2 transition-colors ${aiStatus === 'LISTENING' ? 'text-red-500 animate-pulse' : 'text-gray-400'}`}><Mic size={20} /></button>
+            <button onClick={handleVoiceToggle} className={`p-2 transition-all duration-300 ${aiStatus === 'LISTENING' ? 'text-red-500 bg-red-500/10 rounded-full' : 'text-gray-400'}`}>
+              {aiStatus === 'LISTENING' ? <Square size={20} fill="currentColor" className="animate-pulse" /> : <Mic size={20} />}
+            </button>
             <button onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-400"><Camera size={20} /></button>
         </div>
       </div>
@@ -174,15 +188,25 @@ const AddModal: React.FC<AddModalProps> = ({ isOpen, onClose, onAdd }) => {
                <h2 className="text-6xl font-black text-white tracking-tighter">R$ {formattedValue}</h2>
                {aiStatus !== 'IDLE' && (
                   <div className="mt-12 flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-300">
-                    <div className="w-16 h-16 bg-white/5 rounded-[5px] flex items-center justify-center relative">
+                    <button 
+                      onClick={aiStatus === 'LISTENING' ? stopVoice : undefined}
+                      className="w-24 h-24 bg-white/5 rounded-[5px] flex flex-col items-center justify-center relative active:scale-95 transition-transform"
+                    >
                         {aiStatus === 'LISTENING' ? (
                             <>
                                 <div className="absolute inset-0 bg-red-500/20 rounded-[5px] animate-ping" />
-                                <div className="w-4 h-4 bg-red-500 rounded-[5px]" />
+                                <Square size={32} className="text-red-500 fill-current" />
                             </>
-                        ) : <Loader2 className="animate-spin text-blue-500" size={28} />}
+                        ) : <Loader2 className="animate-spin text-blue-500" size={32} />}
+                    </button>
+                    <div className="text-center">
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                        {aiStatus === 'LISTENING' ? 'Ouvindo...' : 'Processando...'}
+                      </p>
+                      {aiStatus === 'LISTENING' && (
+                        <p className="text-[8px] font-black text-red-500/50 uppercase tracking-widest mt-2">Clique no quadrado para parar</p>
+                      )}
                     </div>
-                    <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{aiStatus === 'LISTENING' ? 'Ouvindo...' : 'Processando...'}</p>
                   </div>
                )}
             </div>
