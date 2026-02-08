@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { 
   ChevronRight, Filter, ChevronLeft, CheckCircle2, Circle, 
@@ -218,7 +217,8 @@ const MonthlyReport: React.FC<MonthlyReportProps> = ({
           
           <div className="space-y-3">
              {stats.monthlyCommitments.map(item => {
-               const isPaid = item.transaction?.isPaid;
+               // Prioriza o mapeamento correto isPaid
+               const isPaid = item.transaction?.isPaid || item.transaction?.is_paid;
                const isMissing = item.isMissing;
                const displayAmount = isMissing ? item.defaultAmount : item.transaction!.amount;
 

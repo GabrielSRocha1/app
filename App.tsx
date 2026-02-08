@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Home, List, CreditCard, Plus, MessageCircle, CloudSync, Zap, ChevronDown, LogOut } from 'lucide-react';
 import { Transaction, AppState, TransactionType, RecurrenceType, Category, RecurringTemplate, UserProfile } from './types';
@@ -63,7 +62,7 @@ const App: React.FC = () => {
 
       if (error) throw error;
       if (data) {
-        // Mapeia snake_case do banco para camelCase do App
+        // Normaliza campos vindos do banco para o estado do App
         const mappedData = data.map((d: any) => ({
           ...d,
           paymentMethod: d.payment_method || d.paymentMethod,
@@ -111,7 +110,7 @@ const App: React.FC = () => {
   const handleAddTransaction = async (newT: Omit<Transaction, 'id' | 'userId' | 'familyId'>) => {
     updateState({ isSyncing: true });
     
-    // Payload padronizado para o Supabase (evita PGRST204)
+    // Mapeia para snake_case exigido pela estrutura padrão do Supabase
     const transactionData = {
       description: newT.description,
       amount: newT.amount,
@@ -119,9 +118,11 @@ const App: React.FC = () => {
       type: newT.type,
       category: newT.category,
       payment_method: newT.paymentMethod || null,
+      paymentMethod: newT.paymentMethod || null,
       recurrence: newT.recurrence,
       user_email: appState.user.email,
-      is_paid: newT.type === TransactionType.INCOME ? true : (newT.recurrence === 'RECURRING' ? false : true)
+      is_paid: newT.type === TransactionType.INCOME ? true : (newT.recurrence === 'RECURRING' ? false : true),
+      isPaid: newT.type === TransactionType.INCOME ? true : (newT.recurrence === 'RECURRING' ? false : true)
     };
 
     try {
@@ -135,8 +136,8 @@ const App: React.FC = () => {
       if (data) {
         const mappedNew = {
           ...data[0],
-          paymentMethod: data[0].payment_method,
-          isPaid: data[0].is_paid
+          paymentMethod: data[0].payment_method || data[0].paymentMethod,
+          isPaid: data[0].is_paid !== undefined ? data[0].is_paid : data[0].isPaid
         };
         setAppState(prev => ({
           ...prev,
@@ -145,9 +146,9 @@ const App: React.FC = () => {
         }));
       }
     } catch (err: any) {
-      console.error("Erro ao salvar transação:", err);
+      console.error("Erro ao salvar:", err);
       updateState({ isSyncing: false });
-      alert(`Erro no banco de dados: ${err.message || 'Verifique as colunas is_paid e payment_method'}`);
+      alert(`Erro: ${err.message}`);
     }
   };
 
@@ -159,10 +160,9 @@ const App: React.FC = () => {
     updateState({ isSyncing: true });
 
     try {
-      // Atualiza usando snake_case
       const { error } = await supabase
         .from('transactions')
-        .update({ is_paid: nextStatus })
+        .update({ is_paid: nextStatus, isPaid: nextStatus })
         .eq('id', id);
 
       if (error) throw error;
@@ -175,9 +175,8 @@ const App: React.FC = () => {
         isSyncing: false
       }));
     } catch (err: any) {
-      console.error("Erro ao atualizar status:", err);
+      console.error("Erro status:", err);
       updateState({ isSyncing: false });
-      alert("Não foi possível atualizar o status de pagamento.");
     }
   };
 
