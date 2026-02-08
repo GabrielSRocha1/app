@@ -56,11 +56,12 @@ export interface Transaction {
   date: string;
   type: TransactionType;
   category: Category;
-  paymentMethod: PaymentMethod;
+  paymentMethod?: PaymentMethod | null;
   recurrence: RecurrenceType;
   userId: string;
   familyId: string;
   isPaid?: boolean;
+  is_paid?: boolean; // Suporte para nome vindo do banco antes do mapeamento
 }
 
 export interface RecurringTemplate {
@@ -75,7 +76,7 @@ export interface AppState {
   limits: SpendingLimit[];
   paymentMethods: CustomPaymentMethod[];
   creditCards: CreditCard[];
-  recurringTemplates: RecurringTemplate[]; // Lista de contas fixas automáticas
+  recurringTemplates: RecurringTemplate[]; 
   currentMonth: string; 
   theme: ThemeMode;
   isSyncing: boolean;
