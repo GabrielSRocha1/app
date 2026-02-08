@@ -1,7 +1,6 @@
-
 import React from 'react';
-import { CATEGORIES } from '../constants';
-import { Transaction, TransactionType } from '../types';
+import { CATEGORIES } from '../constants.tsx';
+import { Transaction, TransactionType } from '../types.ts';
 
 interface TransactionListProps {
   transactions: Transaction[];
