@@ -155,12 +155,14 @@ const App: React.FC = () => {
     if (!t) return;
 
     const nextStatus = !t.isPaid;
+    // Quando marcar como pago, atualizamos também a data para hoje
+    const today = new Date().toISOString();
     updateState({ isSyncing: true });
 
     try {
       const { error } = await supabase
         .from('transactions')
-        .update({ is_paid: nextStatus, isPaid: nextStatus })
+        .update({ is_paid: nextStatus, isPaid: nextStatus, date: today })
         .eq('id', id);
 
       if (error) throw error;
@@ -168,7 +170,7 @@ const App: React.FC = () => {
       setAppState(prev => ({
         ...prev,
         transactions: prev.transactions.map(item => 
-          item.id === id ? { ...item, isPaid: nextStatus } : item
+          item.id === id ? { ...item, isPaid: nextStatus, date: today } : item
         ),
         isSyncing: false
       }));
@@ -178,13 +180,17 @@ const App: React.FC = () => {
     }
   };
 
-  const createFromTemplate = (category: Category, date: Date) => {
+  const createFromTemplate = (category: Category) => {
     const template = appState.recurringTemplates.find(t => t.category === category);
     if (!template) return;
+    
+    // Usamos a data atual para marcar "quando foi selecionado"
+    const now = new Date().toISOString();
+    
     handleAddTransaction({
       description: category,
       amount: template.defaultAmount || 0,
-      date: date.toISOString(),
+      date: now,
       type: TransactionType.EXPENSE,
       category: category,
       paymentMethod: '' as any,
@@ -260,7 +266,7 @@ const App: React.FC = () => {
             currentMonth={new Date(appState.currentMonth)}
             onMonthChange={(date) => updateState({ currentMonth: date.toISOString() })}
             onTogglePaid={toggleTransactionPaid}
-            onConfirmTemplate={createFromTemplate}
+            onConfirmTemplate={(cat) => createFromTemplate(cat)}
             onUpdateTemplates={(temps) => updateState({ recurringTemplates: temps })}
           />
         );

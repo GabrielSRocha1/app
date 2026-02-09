@@ -13,7 +13,7 @@ interface MonthlyReportProps {
   currentMonth: Date;
   onMonthChange: (date: Date) => void;
   onTogglePaid: (id: string) => void;
-  onConfirmTemplate: (category: Category, date: Date) => void;
+  onConfirmTemplate: (category: Category) => void;
   onUpdateTemplates: (templates: RecurringTemplate[]) => void;
 }
 
@@ -96,7 +96,18 @@ const MonthlyReport: React.FC<MonthlyReportProps> = ({
              {stats.monthlyCommitments.map(item => {
                const isPaid = item.transaction?.isPaid;
                const displayAmount = item.isMissing ? item.defaultAmount : item.transaction!.amount;
-               return <button key={item.category} onClick={() => item.isMissing ? onConfirmTemplate(item.category, currentMonth) : onTogglePaid(item.transaction!.id)} className={`w-full text-left bg-[#111] p-5 rounded-[5px] border-l-[3px] transition-all active:scale-[0.98] flex items-center justify-between group shadow-lg ${isPaid ? 'border-green-500 bg-green-500/5' : 'border-red-600 bg-red-600/5'}`}><div className="flex items-center gap-4"><div className={`transition-colors p-2 rounded-[5px] ${isPaid ? 'bg-green-500/20 text-green-500' : 'bg-red-600/20 text-red-500'}`}>{isPaid ? <CheckCircle2 size={20} strokeWidth={3} /> : <Circle size={20} strokeWidth={3} />}</div><div><p className="text-sm font-black text-white tracking-tight">{item.category}</p><p className={`text-[10px] font-black uppercase mt-0.5 tracking-wider ${isPaid ? 'text-green-500' : 'text-red-500'}`}>{isPaid ? 'CONTA PAGA' : 'PENDENTE'}</p></div></div><div className="text-right"><p className={`text-sm font-black tracking-tighter ${isPaid ? 'text-green-500' : 'text-red-500'}`}>{displayAmount > 0 ? `R$ ${displayAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'VALOR?'}</p><span className="text-[9px] font-bold text-gray-700 uppercase">{item.isMissing ? 'REGISTRAR' : 'VER DETALHES'}</span></div></button>;
+               return <button key={item.category} onClick={() => item.isMissing ? onConfirmTemplate(item.category) : onTogglePaid(item.transaction!.id)} className={`w-full text-left bg-[#111] p-5 rounded-[5px] border-l-[3px] transition-all active:scale-[0.98] flex items-center justify-between group shadow-lg ${isPaid ? 'border-green-500 bg-green-500/5' : 'border-red-600 bg-red-600/5'}`}><div className="flex items-center gap-4"><div className={`transition-colors p-2 rounded-[5px] ${isPaid ? 'bg-green-500/20 text-green-500' : 'bg-red-600/20 text-red-500'}`}>{isPaid ? <CheckCircle2 size={20} strokeWidth={3} /> : <Circle size={20} strokeWidth={3} />}</div><div><p className="text-sm font-black text-white tracking-tight">{item.category}</p>
+                 {isPaid ? (
+                   <div className="flex items-center gap-1.5 mt-0.5 animate-in fade-in duration-300">
+                     <span className="text-[9px] font-black text-green-500 uppercase tracking-wider">PAGO EM</span>
+                     <span className="text-[9px] font-black text-green-600 bg-green-500/10 px-1.5 py-0.5 rounded-[3px] tracking-widest">
+                       {new Date(item.transaction!.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                     </span>
+                   </div>
+                 ) : (
+                   <p className="text-[10px] font-black uppercase mt-0.5 tracking-wider text-red-500">PENDENTE</p>
+                 )}
+               </div></div><div className="text-right"><p className={`text-sm font-black tracking-tighter ${isPaid ? 'text-green-500' : 'text-red-500'}`}>{displayAmount > 0 ? `R$ ${displayAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : 'VALOR?'}</p><span className="text-[9px] font-bold text-gray-700 uppercase">{item.isMissing ? 'REGISTRAR' : 'VER DETALHES'}</span></div></button>;
              })}
           </div>
         </div>
