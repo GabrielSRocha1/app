@@ -1,5 +1,5 @@
 {
-  "name": "ZenFinanceiro AI",
+  "name": "Verum Finanças",
   "description": "A multimodal AI-powered financial management app for families, featuring voice commands, receipt scanning, and shared expense tracking.",
   "requestFramePermissions": [
     "camera",

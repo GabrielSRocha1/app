@@ -7,7 +7,7 @@ import models
 from ia_service import ia_service
 from datetime import datetime
 
-app = FastAPI(title="ZenFinanceiro AI API")
+app = FastAPI(title="Verum Finanças API")
 
 app.add_middleware(
     CORSMiddleware,

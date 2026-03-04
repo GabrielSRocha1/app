@@ -19,7 +19,7 @@ CATEGORIES = [
 ]
 
 SYSTEM_INSTRUCTION = f"""
-Você é o motor de processamento financeiro do ZenFinanceiro AI.
+Você é o motor de processamento financeiro do Verum Finanças.
 Extraia dados de transações. Categorias: {', '.join(CATEGORIES)}.
 
 REGRAS DE NEGÓCIO:
