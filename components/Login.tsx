@@ -36,8 +36,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, allowedEmails }) => {
 
       <div className="w-full max-w-sm space-y-12 relative z-10">
         <div className="text-center space-y-4">
-          <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[24px] flex items-center justify-center mx-auto shadow-2xl shadow-blue-900/40 animate-scale-in">
-            <ShieldCheck size={40} className="text-white" strokeWidth={2.5} />
+          <div className="w-20 h-20 rounded-[24px] flex items-center justify-center mx-auto shadow-2xl shadow-blue-900/40 animate-scale-in overflow-hidden">
+            <img src="/icone verum finança.png" alt="Ícone Verum Finanças" className="w-full h-full object-cover" />
           </div>
           <div className="space-y-1">
             <h1 className="text-white tracking-tighter text-h1">Verum Finanças</h1>
