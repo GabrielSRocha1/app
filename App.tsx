@@ -26,12 +26,8 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [toasts, setToasts] = useState<AppNotification[]>([]);
 
-  // Lista dinâmica de e-mails com acesso à família
-  const [allowedEmails, setAllowedEmails] = useState<string[]>(() => {
-    const saved = localStorage.getItem('family_members_familia_padrao');
-    if (saved) { try { return JSON.parse(saved); } catch { } }
-    return ['gabrielsrocha1017@gmail.com', 'danielsrocha7@gmail.com'];
-  });
+  // Lista in-memory de emails com acesso (fonte de verdade: Supabase)
+  const [allowedEmails, setAllowedEmails] = useState<string[]>([]);
 
   const [appState, setAppState] = useState<AppState>(() => {
     const saved = localStorage.getItem('zenfinanceiro_premium_v2');
@@ -486,7 +482,7 @@ const App: React.FC = () => {
     syncRecurringTemplates(templates);
   };
 
-  if (!isAuthenticated) return <Login onLogin={handleLogin} allowedEmails={allowedEmails} />;
+  if (!isAuthenticated) return <Login onLogin={handleLogin} />;
 
   const renderContent = () => {
     switch (activeTab) {
@@ -624,7 +620,12 @@ const App: React.FC = () => {
 
       <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[300] w-full max-w-[620px] px-4 pointer-events-none flex flex-col gap-3">
         {toasts.map(toast => (
-          <Toast key={toast.id} notification={toast} onClose={removeToast} />
+          <Toast
+            key={toast.id}
+            notification={toast}
+            onClose={removeToast}
+            duration={toast.type === 'warning' ? 8000 : toast.type === 'error' ? 6000 : 4000}
+          />
         ))}
       </div>
 

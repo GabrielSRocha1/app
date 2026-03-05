@@ -55,7 +55,7 @@ const Toast: React.FC<ToastProps> = ({ notification, onClose, duration = 4000 })
                     <h4 className="font-black tracking-tight text-white text-[13px] uppercase truncate">
                         {notification.title}
                     </h4>
-                    <p className="text-gray-400 text-[11px] leading-snug mt-1 font-medium line-clamp-2">
+                    <p className="text-gray-400 text-[11px] leading-snug mt-1 font-medium line-clamp-5 whitespace-pre-line">
                         {notification.message}
                     </p>
                 </div>
@@ -70,8 +70,8 @@ const Toast: React.FC<ToastProps> = ({ notification, onClose, duration = 4000 })
                 <div className="absolute bottom-0 left-0 h-[2px] bg-white/5 rounded-full overflow-hidden w-full">
                     <div
                         className={`h-full opacity-50 ${notification.type === 'success' ? 'bg-green-500' :
-                                notification.type === 'error' ? 'bg-red-500' :
-                                    notification.type === 'warning' ? 'bg-yellow-500' : 'bg-blue-500'
+                            notification.type === 'error' ? 'bg-red-500' :
+                                notification.type === 'warning' ? 'bg-yellow-500' : 'bg-blue-500'
                             }`}
                         style={{
                             animation: `toast-progress ${duration}ms linear forwards`

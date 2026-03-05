@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Mic, Camera, Check, Loader2, ChevronRight, Square, Delete, Calendar, Tag, CreditCard, ChevronLeft, Search, Landmark, DollarSign, Receipt, ShieldCheck, Plus, Edit2, Trash2 } from 'lucide-react';
 import { TransactionType, Category, PaymentMethod, RecurrenceType } from '../types.ts';
 import { CATEGORIES, INCOME_CATEGORIES, EXPENSE_CATEGORIES, PAYMENT_METHODS, BANKS } from '../constants.tsx';
-import { processReceiptImage, processVoiceCommand, speakText, processTextCommand } from '../geminiService.ts';
+import { processReceiptImage, processVoiceCommand, speakText, processTextCommand, processStructuredVoiceCommand } from '../geminiService.ts';
 import { elevenSTT, elevenTTS } from '../elevenlabsService.ts';
 
 interface AddModalProps {
@@ -206,48 +206,89 @@ const AddModal: React.FC<AddModalProps> = ({ isOpen, onClose, onAdd, onNotify })
         setAiStatus('PROCESSING');
         const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
 
-        // Uso do ElevenLabs para "entender e compreender" o áudio (Speech to Text de alta precisão)
-        const transcribedText = await elevenSTT(blob);
+        // Transcrição com ElevenLabs (alta precisão) ou fallback
+        let transcribedText = await elevenSTT(blob);
 
-        if (transcribedText) {
-          // Processar o texto com a inteligência do Gemini
-          const suggestion = await processTextCommand(transcribedText);
-
-          if (suggestion) {
-            setRawValue((suggestion.amount * 100).toFixed(0));
-            setType(suggestion.type);
-            setFormData(prev => ({
-              ...prev,
-              description: suggestion.description,
-              category: (suggestion.category as Category) || '',
-              paymentMethod: (suggestion.paymentMethod as PaymentMethod) || ''
-            }));
-            setStep('DETAILS');
-
-            // Voz de alta qualidade do ElevenLabs para confirmar
-            await elevenTTS(suggestion.summaryText);
-          }
-        } else {
-          // Fallback para o comportamento anterior se o ElevenLabs falhar
+        // Se ElevenLabs falhar, tenta via Gemini direto
+        if (!transcribedText) {
           const reader = new FileReader();
-          reader.onloadend = async () => {
-            const base64 = (reader.result as string).split(',')[1];
-            const suggestion = await processVoiceCommand(base64, 'audio/webm');
-            if (suggestion) {
-              setRawValue((suggestion.amount * 100).toFixed(0));
-              setType(suggestion.type);
-              setFormData(prev => ({
-                ...prev,
-                description: suggestion.description,
-                category: (suggestion.category as Category) || '',
-                paymentMethod: (suggestion.paymentMethod as PaymentMethod) || ''
-              }));
-              setStep('DETAILS');
-              await speakText(suggestion.summaryText);
-            }
-          };
-          reader.readAsDataURL(blob);
+          await new Promise<void>(resolve => {
+            reader.onloadend = () => resolve();
+            reader.readAsDataURL(blob);
+          });
+          // Usa o Gemini para transcrever
+          const base64 = (reader.result as string).split(',')[1];
+          const fallback = await processVoiceCommand(base64, 'audio/webm');
+          transcribedText = fallback?.summaryText || null;
         }
+
+        if (!transcribedText) {
+          setAiStatus('IDLE');
+          if (onNotify) onNotify(
+            '🎙️ Não entendi',
+            'Não consegui transcrever o áudio. Tente novamente falando mais claramente.',
+            'error'
+          );
+          return;
+        }
+
+        // Processa o comando estruturado de voz
+        const result = await processStructuredVoiceCommand(transcribedText);
+
+        if (result.success && result.data) {
+          // ✅ Todos os campos presentes — cria a transação IMEDIATAMENTE
+          const d = result.data;
+          onAdd({
+            description: d.description,
+            amount: d.amount,
+            type: d.type,
+            category: d.category,
+            paymentMethod: d.paymentMethod || null,
+            bank: d.bank || null,
+            recurrence: RecurrenceType.UNIQUE,
+            date: d.date || new Date().toISOString().split('T')[0]
+          });
+
+          // Mostra tela de sucesso
+          setRawValue((d.amount * 100).toFixed(0));
+          setType(d.type);
+          setStep('SUCCESS');
+
+          // Notifica o usuário
+          const typeName = d.type === TransactionType.INCOME ? 'Receita' : 'Despesa';
+          const formattedAmt = d.amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          if (onNotify) onNotify(
+            `✅ ${typeName} Criada!`,
+            `${formattedAmt} via ${d.paymentMethod} no ${d.bank} registrada com sucesso.`,
+            'success'
+          );
+
+          // Fala a confirmação
+          await elevenTTS(d.summaryText);
+
+          // Fecha modal após 2.5s
+          setTimeout(() => {
+            onClose();
+            reset();
+          }, 2500);
+
+        } else {
+          // ❌ Informações incompletas — instrui o usuário SEM criar nada
+          const instrucao = 'Fale assim: "Quero criar uma RECEITA ou DESPESA de [VALOR] forma de pagamento [MÉTODO] e o banco [BANCO]"';
+          const detalhe = result.missingFields && result.missingFields.length > 0
+            ? `Campos faltando: ${result.missingFields.join(', ')}`
+            : result.errorMessage || 'Informações incompletas.';
+
+          if (onNotify) onNotify(
+            '⚠️ Como falar corretamente',
+            `${instrucao}\n\n${detalhe}`,
+            'warning'
+          );
+
+          // Também fala as instruções para o usuário
+          await elevenTTS(`Informações incompletas. ${detalhe}. Por favor, fale: quero criar uma receita ou despesa de, o valor, forma de pagamento, e o banco.`);
+        }
+
         setAiStatus('IDLE');
       };
       recorder.start();
@@ -474,8 +515,8 @@ const AddModal: React.FC<AddModalProps> = ({ isOpen, onClose, onAdd, onNotify })
             onClick={() => fileInputRef.current?.click()}
             disabled={aiStatus === 'PROCESSING'}
             className={`p-2 transition-all rounded-lg ${aiStatus === 'PROCESSING'
-                ? 'text-blue-400 bg-blue-500/10 animate-pulse'
-                : 'text-gray-400 hover:text-white hover:bg-white/5'
+              ? 'text-blue-400 bg-blue-500/10 animate-pulse'
+              : 'text-gray-400 hover:text-white hover:bg-white/5'
               } disabled:opacity-50`}
             title="Fotografar cupom fiscal"
           >
@@ -512,12 +553,26 @@ const AddModal: React.FC<AddModalProps> = ({ isOpen, onClose, onAdd, onNotify })
                       </>
                     ) : <Loader2 className="animate-spin text-blue-500" size={32} />}
                   </button>
-                  <div className="text-center">
+                  <div className="text-center space-y-2">
                     <p className="text-gray-400 uppercase tracking-widest text-h5">
                       {aiStatus === 'LISTENING' ? 'Ouvindo...' : 'Processando...'}
                     </p>
                     {aiStatus === 'LISTENING' && (
-                      <p className="text-red-500/50 uppercase tracking-widest mt-2 text-h5">Clique no quadrado para parar</p>
+                      <>
+                        <p className="text-red-500/50 uppercase tracking-widest text-h5">Clique no quadrado para parar</p>
+                        <div className="mt-3 mx-auto max-w-[280px] bg-white/5 rounded-[5px] p-4 text-left border border-white/10">
+                          <p className="text-gray-500 text-[9px] uppercase tracking-widest mb-2">Como falar:</p>
+                          <p className="text-gray-300 text-[11px] leading-relaxed">
+                            <span className="text-blue-400">"Quero criar uma</span>{' '}
+                            <span className="text-green-400">receita</span>{' '}ou{' '}
+                            <span className="text-red-400">despesa</span>{' '}de{' '}
+                            <span className="text-yellow-400">[valor]</span>{' '}forma de pagamento{' '}
+                            <span className="text-purple-400">[método]</span>{' '}e o banco{' '}
+                            <span className="text-cyan-400">[banco]</span>
+                            <span className="text-blue-400">"</span>
+                          </p>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>

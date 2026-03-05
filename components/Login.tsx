@@ -1,32 +1,50 @@
 
 import React, { useState } from 'react';
 import { ShieldCheck, Mail, ArrowRight, Loader2, Lock } from 'lucide-react';
+import { supabase } from '../lib/supabase.ts';
 
 interface LoginProps {
   onLogin: (email: string) => void;
-  allowedEmails: string[];
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, allowedEmails }) => {
+const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    // Simulação de delay para feedback visual
-    setTimeout(() => {
-      const lowerEmail = email.toLowerCase().trim();
-      if (allowedEmails.map(e => e.toLowerCase()).includes(lowerEmail)) {
+    const lowerEmail = email.toLowerCase().trim();
+
+    try {
+      // Busca direto no Supabase se o email está cadastrado na tabela family_members
+      const { data, error: supabaseError } = await supabase
+        .from('family_members')
+        .select('email')
+        .eq('email', lowerEmail)
+        .maybeSingle();
+
+      if (supabaseError) {
+        console.error('Erro ao verificar email:', supabaseError);
+        setError('Erro ao verificar acesso. Tente novamente.');
+        return;
+      }
+
+      if (data) {
+        // Email encontrado no Supabase — acesso permitido
         onLogin(lowerEmail);
       } else {
         setError('Acesso restrito. Este email não possui permissão.');
       }
+    } catch (err: any) {
+      console.error('Erro inesperado:', err);
+      setError('Erro de conexão. Verifique sua internet e tente novamente.');
+    } finally {
       setLoading(false);
-    }, 800);
+    }
   };
 
   return (
@@ -81,7 +99,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, allowedEmails }) => {
 
         <div className="flex items-center justify-center gap-2 text-gray-700">
           <Lock size={12} />
-          <span className="uppercase tracking-widest text-h5">Conexão Segura</span>
+          <span className="uppercase tracking-widest text-h5">Verificado via Supabase</span>
         </div>
       </div>
     </div>

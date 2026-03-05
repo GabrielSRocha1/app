@@ -114,6 +114,13 @@ Retorne JSON apenas com os campos encontrados.`
   }
 };
 
+export interface VoiceCommandResult {
+  success: boolean;
+  data?: AISuggestion & { bank?: string };
+  missingFields?: string[];
+  errorMessage?: string;
+}
+
 export const processVoiceCommand = async (audioBase64: string, mimeType: string): Promise<AISuggestion | null> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
@@ -145,6 +152,86 @@ export const processVoiceCommand = async (audioBase64: string, mimeType: string)
   } catch (error) {
     console.error("Erro na IA de Voz", error);
     return null;
+  }
+};
+
+export const processStructuredVoiceCommand = async (transcribedText: string): Promise<VoiceCommandResult> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  try {
+    const prompt = `Você é um assistente financeiro. O usuário deve falar EXATAMENTE neste formato:
+"quero criar uma receita de [valor] forma de recebimento [método] e o banco [banco]"
+OU
+"quero criar uma despesa de [valor] forma de pagamento [método] e o banco [banco]"
+
+Texto falado pelo usuário: "${transcribedText}"
+
+Analise o texto e extraia:
+- type: "INCOME" se mencionar "receita", "EXPENSE" se mencionar "despesa". NULL se não mencionar nenhum dos dois.
+- amount: valor numérico em reais mencionado (ex: "cinquenta reais" = 50, "cento e vinte" = 120, "R$ 45,90" = 45.90). NULL se não identificado.
+- paymentMethod: forma de pagamento ou recebimento mencionada (Pix, Dinheiro, Cartão de Crédito, Cartão de Débito, Boleto, ou outro mencionado). NULL se não identificada.
+- bank: banco mencionado (Nubank, Itaú, Inter, Santander, Bradesco, Caixa, ou outro mencionado). NULL se não identificado.
+- category: tente inferir uma categoria baseada no contexto. Se não houver contexto suficiente, use "Outros" para despesa ou "Outras Receitas" para receita.
+- allFieldsPresent: true SOMENTE se type, amount, paymentMethod E bank estiverem todos presentes e válidos. false caso contrário.
+- missingFields: array com os nomes dos campos ausentes em português (ex: ["tipo (receita ou despesa)", "valor", "forma de pagamento", "banco"])
+
+Retorne apenas JSON.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-1.5-flash',
+      contents: { parts: [{ text: prompt }] },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            type: { type: Type.STRING, nullable: true },
+            amount: { type: Type.NUMBER, nullable: true },
+            paymentMethod: { type: Type.STRING, nullable: true },
+            bank: { type: Type.STRING, nullable: true },
+            category: { type: Type.STRING, nullable: true },
+            allFieldsPresent: { type: Type.BOOLEAN },
+            missingFields: { type: Type.ARRAY, items: { type: Type.STRING } }
+          },
+          required: ["allFieldsPresent", "missingFields"]
+        }
+      }
+    });
+
+    const parsed = JSON.parse(response.text || "{}");
+
+    if (!parsed.allFieldsPresent) {
+      const missing: string[] = parsed.missingFields || [];
+      return {
+        success: false,
+        missingFields: missing,
+        errorMessage: `Para criar uma transação por voz, fale assim:\n"Quero criar uma RECEITA ou DESPESA de [VALOR] forma de pagamento [MÉTODO] e o banco [BANCO]"\n\nCampos faltando: ${missing.join(', ')}`
+      };
+    }
+
+    const typeValue = parsed.type === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE;
+    const typeName = typeValue === TransactionType.INCOME ? 'receita' : 'despesa';
+    const category = parsed.category || (typeValue === TransactionType.INCOME ? 'Outras Receitas' : 'Outros');
+    const formattedAmount = (parsed.amount as number).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+
+    return {
+      success: true,
+      data: {
+        description: `${typeName === 'receita' ? 'Receita' : 'Despesa'} via ${parsed.paymentMethod}`,
+        amount: parsed.amount,
+        type: typeValue,
+        category: category,
+        paymentMethod: parsed.paymentMethod,
+        bank: parsed.bank,
+        date: new Date().toISOString().split('T')[0],
+        summaryText: `${typeName === 'receita' ? 'Receita' : 'Despesa'} de R$ ${formattedAmount} criada! Método: ${parsed.paymentMethod}, Banco: ${parsed.bank}.`
+      }
+    };
+  } catch (error) {
+    console.error("Erro no processamento de voz estruturado", error);
+    return {
+      success: false,
+      errorMessage: "Não consegui entender o áudio. Tente novamente."
+    };
   }
 };
 

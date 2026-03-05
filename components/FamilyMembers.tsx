@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Mail, Plus, Trash2, Check, X, ShieldCheck, Crown, UserCircle2, RefreshCcw, Save } from 'lucide-react';
+import { Users, Mail, Plus, Trash2, Check, X, ShieldCheck, Crown, UserCircle2, RefreshCcw, Save, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase.ts';
 
 interface FamilyMembersProps {
@@ -19,37 +19,65 @@ const AVATAR_COLORS = [
 ];
 
 const FamilyMembers: React.FC<FamilyMembersProps> = ({ currentUserEmail, familyId, onAllowedEmailsChange, onNotify }) => {
-    const STORAGE_KEY = `family_members_${familyId}`;
-
-    const [members, setMembers] = useState<string[]>(() => {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-            try { return JSON.parse(saved); } catch { }
-        }
-        // sempre inclui o dono como primeiro membro
-        return [currentUserEmail];
-    });
-
+    const [members, setMembers] = useState<string[]>([]);
     const [isAdding, setIsAdding] = useState(false);
     const [newEmail, setNewEmail] = useState('');
     const [error, setError] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [saveSuccess, setSaveSuccess] = useState(false);
 
-    // garante que o email do dono sempre está na lista
+    // Carrega membros do Supabase ao montar o componente
     useEffect(() => {
-        if (!members.includes(currentUserEmail)) {
-            setMembers(prev => [currentUserEmail, ...prev]);
-        }
-    }, [currentUserEmail]);
+        loadMembersFromSupabase();
+    }, [familyId]);
 
-    const saveMembers = (list: string[]) => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-        onAllowedEmailsChange(list);
-        setMembers(list);
+    const loadMembersFromSupabase = async () => {
+        setIsLoading(true);
+        try {
+            const { data, error: supabaseError } = await supabase
+                .from('family_members')
+                .select('email, is_owner')
+                .eq('family_id', familyId)
+                .order('is_owner', { ascending: false }); // owner primeiro
+
+            if (supabaseError) throw supabaseError;
+
+            if (data && data.length > 0) {
+                const emails = data.map((m: any) => m.email);
+                setMembers(emails);
+                onAllowedEmailsChange(emails);
+            } else {
+                // Família ainda sem membros no Supabase — adiciona o dono automaticamente
+                const initialList = [currentUserEmail];
+                setMembers(initialList);
+                await saveToSupabase(initialList);
+            }
+        } catch (err: any) {
+            console.error('Erro ao carregar membros:', err);
+            // Fallback: ao menos mostra o próprio usuário
+            setMembers([currentUserEmail]);
+            if (onNotify) onNotify('Erro ao Carregar', 'Não foi possível carregar os membros da família do servidor.', 'error');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleAdd = () => {
+    const saveToSupabase = async (list: string[]) => {
+        // Remove todos os membros atuais e reinsere (garante que a lista no Supabase é exatamente a local)
+        await supabase.from('family_members').delete().eq('family_id', familyId);
+
+        const rows = list.map(email => ({
+            family_id: familyId,
+            email,
+            is_owner: email === currentUserEmail,
+        }));
+
+        const { error } = await supabase.from('family_members').insert(rows);
+        if (error) throw error;
+    };
+
+    const handleAdd = async () => {
         const email = newEmail.toLowerCase().trim();
         setError('');
 
@@ -70,29 +98,44 @@ const FamilyMembers: React.FC<FamilyMembersProps> = ({ currentUserEmail, familyI
         }
 
         const updated = [...members, email];
-        saveMembers(updated);
-        setNewEmail('');
-        setIsAdding(false);
-    };
-
-    const handleRemove = (email: string) => {
-        if (email === currentUserEmail) return; // não pode remover o dono
-        const updated = members.filter(m => m !== email);
-        saveMembers(updated);
-    };
-
-    const handleSyncToCloud = async () => {
         setIsSaving(true);
         try {
-            // Salva no Supabase a lista permitida para que o Login.tsx possa buscar
-            await supabase.from('family_members').upsert(
-                members.map(email => ({
-                    family_id: familyId,
-                    email,
-                    is_owner: email === currentUserEmail,
-                })),
-                { onConflict: 'family_id,email' }
-            );
+            await saveToSupabase(updated);
+            setMembers(updated);
+            onAllowedEmailsChange(updated);
+            setNewEmail('');
+            setIsAdding(false);
+            if (onNotify) onNotify('Membro Adicionado', `${email} foi adicionado e já pode acessar o app.`, 'success');
+        } catch (err: any) {
+            console.error('Erro ao adicionar membro:', err);
+            setError('Erro ao salvar. Tente novamente.');
+            if (onNotify) onNotify('Erro ao Adicionar', err.message || 'Não foi possível salvar.', 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleRemove = async (email: string) => {
+        if (email === currentUserEmail) return; // não pode remover o dono
+        const updated = members.filter(m => m !== email);
+        setIsSaving(true);
+        try {
+            await saveToSupabase(updated);
+            setMembers(updated);
+            onAllowedEmailsChange(updated);
+            if (onNotify) onNotify('Membro Removido', `${email} foi removido e não pode mais acessar o app.`, 'warning');
+        } catch (err: any) {
+            console.error('Erro ao remover membro:', err);
+            if (onNotify) onNotify('Erro ao Remover', err.message || 'Não foi possível remover.', 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleManualSync = async () => {
+        setIsSaving(true);
+        try {
+            await saveToSupabase(members);
             setSaveSuccess(true);
             if (onNotify) onNotify('Família Sincronizada', 'Os membros foram salvos com sucesso na nuvem.', 'success');
             setTimeout(() => setSaveSuccess(false), 2500);
@@ -116,12 +159,12 @@ const FamilyMembers: React.FC<FamilyMembersProps> = ({ currentUserEmail, familyI
                     </div>
                     <div>
                         <h1 className="text-white tracking-tight leading-none text-h3">Família</h1>
-                        <p className="text-gray-600 uppercase tracking-widest text-h5">Membros com acesso</p>
+                        <p className="text-gray-600 uppercase tracking-widest text-h5">Membros com acesso • Supabase</p>
                     </div>
                 </div>
                 <button
-                    onClick={handleSyncToCloud}
-                    disabled={isSaving}
+                    onClick={handleManualSync}
+                    disabled={isSaving || isLoading}
                     className={`flex items-center gap-2 px-4 py-2 rounded-[5px] text-h5 uppercase tracking-widest transition-all active:scale-95
             ${saveSuccess
                             ? 'bg-green-600/20 text-green-400 border border-green-500/30'
@@ -132,149 +175,162 @@ const FamilyMembers: React.FC<FamilyMembersProps> = ({ currentUserEmail, familyI
                         : saveSuccess
                             ? <Check size={14} strokeWidth={3} />
                             : <Save size={14} />}
-                    {saveSuccess ? 'Salvo!' : 'Salvar'}
+                    {saveSuccess ? 'Salvo!' : 'Sincronizar'}
                 </button>
             </header>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-32">
 
-                {/* Contador */}
-                <div className="flex items-center justify-between px-1">
-                    <p className="text-gray-600 uppercase tracking-widest text-h5">
-                        {members.length} / {MAX_MEMBERS} membros
-                    </p>
-                    <div className="flex gap-1">
-                        {Array.from({ length: MAX_MEMBERS }).map((_, i) => (
-                            <div
-                                key={i}
-                                className={`w-2 h-2 rounded-full transition-all duration-300 ${i < members.length ? 'bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.6)]' : 'bg-white/10'}`}
-                            />
-                        ))}
+                {/* Loading state */}
+                {isLoading ? (
+                    <div className="flex flex-col items-center justify-center py-20 gap-4">
+                        <Loader2 size={32} className="text-blue-500 animate-spin" />
+                        <p className="text-gray-600 uppercase tracking-widest text-h5">Carregando do Supabase...</p>
                     </div>
-                </div>
+                ) : (
+                    <>
+                        {/* Contador */}
+                        <div className="flex items-center justify-between px-1">
+                            <p className="text-gray-600 uppercase tracking-widest text-h5">
+                                {members.length} / {MAX_MEMBERS} membros
+                            </p>
+                            <div className="flex gap-1">
+                                {Array.from({ length: MAX_MEMBERS }).map((_, i) => (
+                                    <div
+                                        key={i}
+                                        className={`w-2 h-2 rounded-full transition-all duration-300 ${i < members.length ? 'bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.6)]' : 'bg-white/10'}`}
+                                    />
+                                ))}
+                            </div>
+                        </div>
 
-                {/* Lista de Membros */}
-                <div className="bg-[#111] rounded-[24px] border border-white/5 overflow-hidden divide-y divide-white/5">
-                    {members.map((email, idx) => {
-                        const isOwner = email === currentUserEmail;
-                        const initial = getInitial(email);
-                        const gradientClass = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+                        {/* Lista de Membros */}
+                        <div className="bg-[#111] rounded-[24px] border border-white/5 overflow-hidden divide-y divide-white/5">
+                            {members.map((email, idx) => {
+                                const isOwner = email === currentUserEmail;
+                                const initial = getInitial(email);
+                                const gradientClass = AVATAR_COLORS[idx % AVATAR_COLORS.length];
 
-                        return (
-                            <div key={email} className="flex items-center gap-4 p-5 group hover:bg-white/3 transition-colors">
-                                {/* Avatar */}
-                                <div className={`w-12 h-12 rounded-[5px] bg-gradient-to-br ${gradientClass} flex items-center justify-center shadow-lg shrink-0 font-bold text-white text-h3`}>
-                                    {initial}
-                                </div>
+                                return (
+                                    <div key={email} className="flex items-center gap-4 p-5 group hover:bg-white/3 transition-colors">
+                                        {/* Avatar */}
+                                        <div className={`w-12 h-12 rounded-[5px] bg-gradient-to-br ${gradientClass} flex items-center justify-center shadow-lg shrink-0 font-bold text-white text-h3`}>
+                                            {initial}
+                                        </div>
 
-                                {/* Info */}
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <p className="text-white text-h4 truncate">{email}</p>
-                                        {isOwner && (
-                                            <span className="flex items-center gap-1 px-2 py-0.5 bg-yellow-500/10 text-yellow-500 text-[9px] uppercase tracking-widest rounded-full border border-yellow-500/20 shrink-0">
-                                                <Crown size={9} />
-                                                Dono
-                                            </span>
+                                        {/* Info */}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-white text-h4 truncate">{email}</p>
+                                                {isOwner && (
+                                                    <span className="flex items-center gap-1 px-2 py-0.5 bg-yellow-500/10 text-yellow-500 text-[9px] uppercase tracking-widest rounded-full border border-yellow-500/20 shrink-0">
+                                                        <Crown size={9} />
+                                                        Dono
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-gray-600 text-h5 uppercase tracking-widest mt-0.5">
+                                                {isOwner ? 'Conta principal' : `Membro ${idx}`}
+                                            </p>
+                                        </div>
+
+                                        {/* Status / Remove */}
+                                        {isOwner ? (
+                                            <ShieldCheck size={18} className="text-blue-500 shrink-0" />
+                                        ) : (
+                                            <button
+                                                onClick={() => handleRemove(email)}
+                                                disabled={isSaving}
+                                                className="p-2 text-gray-700 hover:text-red-500 hover:bg-red-500/10 rounded-full transition-all opacity-0 group-hover:opacity-100 shrink-0 disabled:opacity-30"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
                                         )}
                                     </div>
-                                    <p className="text-gray-600 text-h5 uppercase tracking-widest mt-0.5">
-                                        {isOwner ? 'Conta principal' : `Membro ${idx}`}
-                                    </p>
-                                </div>
+                                );
+                            })}
+                        </div>
 
-                                {/* Status / Remove */}
-                                {isOwner ? (
-                                    <ShieldCheck size={18} className="text-blue-500 shrink-0" />
-                                ) : (
-                                    <button
-                                        onClick={() => handleRemove(email)}
-                                        className="p-2 text-gray-700 hover:text-red-500 hover:bg-red-500/10 rounded-full transition-all opacity-0 group-hover:opacity-100 shrink-0"
+                        {/* Slots vazios */}
+                        {members.length < MAX_MEMBERS && !isAdding && (
+                            <div className="space-y-2">
+                                {Array.from({ length: MAX_MEMBERS - members.length }).map((_, i) => (
+                                    <div
+                                        key={i}
+                                        className="flex items-center gap-4 p-5 bg-[#111] rounded-[24px] border border-dashed border-white/10"
                                     >
-                                        <Trash2 size={16} />
-                                    </button>
-                                )}
+                                        <div className="w-12 h-12 rounded-[5px] bg-white/5 flex items-center justify-center shrink-0">
+                                            <UserCircle2 size={24} className="text-gray-700" />
+                                        </div>
+                                        <p className="text-gray-700 text-h4 uppercase tracking-widest">Vaga disponível</p>
+                                    </div>
+                                ))}
                             </div>
-                        );
-                    })}
-                </div>
-
-                {/* Slots vazios */}
-                {members.length < MAX_MEMBERS && !isAdding && (
-                    <div className="space-y-2">
-                        {Array.from({ length: MAX_MEMBERS - members.length }).map((_, i) => (
-                            <div
-                                key={i}
-                                className="flex items-center gap-4 p-5 bg-[#111] rounded-[24px] border border-dashed border-white/10"
-                            >
-                                <div className="w-12 h-12 rounded-[5px] bg-white/5 flex items-center justify-center shrink-0">
-                                    <UserCircle2 size={24} className="text-gray-700" />
-                                </div>
-                                <p className="text-gray-700 text-h4 uppercase tracking-widest">Vaga disponível</p>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                {/* Formulário de adição */}
-                {isAdding && (
-                    <div className="bg-[#111] p-5 rounded-[24px] border border-blue-500/30 space-y-4 animate-in slide-in-from-bottom duration-300">
-                        <label className="text-gray-500 text-[10px] uppercase tracking-widest ml-1">E-mail do Novo Membro</label>
-                        <div className="relative">
-                            <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600" />
-                            <input
-                                autoFocus
-                                type="email"
-                                placeholder="nome@email.com"
-                                className="w-full bg-black/20 border border-white/5 rounded-xl py-4 pl-12 pr-4 outline-none focus:border-blue-500/50 text-white"
-                                value={newEmail}
-                                onChange={(e) => { setNewEmail(e.target.value); setError(''); }}
-                                onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                            />
-                        </div>
-                        {error && (
-                            <p className="text-red-400 text-h5 uppercase tracking-widest ml-1">{error}</p>
                         )}
-                        <div className="flex gap-2">
+
+                        {/* Formulário de adição */}
+                        {isAdding && (
+                            <div className="bg-[#111] p-5 rounded-[24px] border border-blue-500/30 space-y-4 animate-in slide-in-from-bottom duration-300">
+                                <label className="text-gray-500 text-[10px] uppercase tracking-widest ml-1">E-mail do Novo Membro</label>
+                                <div className="relative">
+                                    <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-600" />
+                                    <input
+                                        autoFocus
+                                        type="email"
+                                        placeholder="nome@email.com"
+                                        className="w-full bg-black/20 border border-white/5 rounded-xl py-4 pl-12 pr-4 outline-none focus:border-blue-500/50 text-white"
+                                        value={newEmail}
+                                        onChange={(e) => { setNewEmail(e.target.value); setError(''); }}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+                                    />
+                                </div>
+                                {error && (
+                                    <p className="text-red-400 text-h5 uppercase tracking-widest ml-1">{error}</p>
+                                )}
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={handleAdd}
+                                        disabled={isSaving}
+                                        className="flex-1 bg-blue-600 text-white py-4 rounded-xl flex items-center justify-center gap-2 text-h5 uppercase tracking-widest active:scale-95 transition-all disabled:opacity-50"
+                                    >
+                                        {isSaving ? <RefreshCcw size={14} className="animate-spin" /> : <Check size={16} strokeWidth={3} />}
+                                        {isSaving ? 'Salvando...' : 'Adicionar'}
+                                    </button>
+                                    <button
+                                        onClick={() => { setIsAdding(false); setNewEmail(''); setError(''); }}
+                                        className="px-5 py-4 bg-white/5 text-gray-500 rounded-xl border border-white/5 active:scale-95 transition-all"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Botão Adicionar */}
+                        {members.length < MAX_MEMBERS && !isAdding && (
                             <button
-                                onClick={handleAdd}
-                                className="flex-1 bg-blue-600 text-white py-4 rounded-xl flex items-center justify-center gap-2 text-h5 uppercase tracking-widest active:scale-95 transition-all"
+                                onClick={() => setIsAdding(true)}
+                                className="w-full py-5 border border-dashed border-blue-500/30 text-blue-400 rounded-[24px] flex items-center justify-center gap-3 hover:bg-blue-500/5 transition-all text-h5 uppercase tracking-widest active:scale-[0.98]"
                             >
-                                <Check size={16} strokeWidth={3} /> Adicionar
+                                <Plus size={18} /> Adicionar membro
                             </button>
-                            <button
-                                onClick={() => { setIsAdding(false); setNewEmail(''); setError(''); }}
-                                className="px-5 py-4 bg-white/5 text-gray-500 rounded-xl border border-white/5 active:scale-95 transition-all"
-                            >
-                                <X size={16} />
-                            </button>
+                        )}
+
+                        {/* Info Card */}
+                        <div className="bg-blue-600/5 border border-blue-500/10 rounded-[24px] p-5 space-y-3">
+                            <div className="flex items-center gap-2">
+                                <ShieldCheck size={16} className="text-blue-500" />
+                                <p className="text-blue-400 text-h5 uppercase tracking-widest">Como funciona</p>
+                            </div>
+                            <ul className="space-y-1.5 text-gray-500 text-h5">
+                                <li>• Máximo de <span className="text-white">4 membros</span> por família</li>
+                                <li>• Todos compartilham as <span className="text-white">mesmas receitas e despesas</span></li>
+                                <li>• Acesso verificado <span className="text-white">diretamente pelo Supabase</span></li>
+                                <li>• Ao adicionar um membro, ele já pode acessar <span className="text-white">imediatamente</span></li>
+                            </ul>
                         </div>
-                    </div>
+                    </>
                 )}
-
-                {/* Botão Adicionar */}
-                {members.length < MAX_MEMBERS && !isAdding && (
-                    <button
-                        onClick={() => setIsAdding(true)}
-                        className="w-full py-5 border border-dashed border-blue-500/30 text-blue-400 rounded-[24px] flex items-center justify-center gap-3 hover:bg-blue-500/5 transition-all text-h5 uppercase tracking-widest active:scale-[0.98]"
-                    >
-                        <Plus size={18} /> Adicionar membro
-                    </button>
-                )}
-
-                {/* Info Card */}
-                <div className="bg-blue-600/5 border border-blue-500/10 rounded-[24px] p-5 space-y-3">
-                    <div className="flex items-center gap-2">
-                        <ShieldCheck size={16} className="text-blue-500" />
-                        <p className="text-blue-400 text-h5 uppercase tracking-widest">Como funciona</p>
-                    </div>
-                    <ul className="space-y-1.5 text-gray-500 text-h5">
-                        <li>• Máximo de <span className="text-white">4 membros</span> por família</li>
-                        <li>• Todos compartilham as <span className="text-white">mesmas receitas e despesas</span></li>
-                        <li>• O acesso é feito apenas pelo <span className="text-white">e-mail cadastrado</span></li>
-                        <li>• Clique em <span className="text-white">Salvar</span> para sincronizar com a nuvem</li>
-                    </ul>
-                </div>
             </div>
         </div>
     );
